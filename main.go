@@ -11,7 +11,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var webhookURL = os.Getenv("DISCORD_WEBHOOK")
+var webhookURL string
 
 const mainLink = "https://subbacultcha.nl/events/"
 
@@ -147,6 +147,8 @@ func NewMonitor() *Monitor {
 }
 
 func main() {
+	webhookURL = os.Getenv("DISCORD_WEBHOOK")
+
 	if webhookURL == "" {
 		log.Fatal("No DISCORD_WEBHOOK environment variable found")
 	}
