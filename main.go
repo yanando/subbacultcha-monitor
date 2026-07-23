@@ -33,8 +33,10 @@ func (m *Monitor) Refresh(link string, init bool) {
 
 	if err != nil {
 		m.logger.Err(err).Msg("getting events page")
+		return
 	} else if resp.StatusCode > 200 {
 		m.logger.Error().Int("status code", resp.StatusCode)
+		return
 	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
@@ -42,6 +44,7 @@ func (m *Monitor) Refresh(link string, init bool) {
 
 	if err != nil {
 		m.logger.Err(err).Msg("parsing events page")
+		return
 	}
 
 	// iterate over cards
@@ -52,6 +55,7 @@ func (m *Monitor) Refresh(link string, init bool) {
 			m.logger.Err(err).Msg("error getting title innerhtml")
 		} else if _, exists := m.cache[title]; exists {
 			// already in cache, skip
+			return
 		}
 
 		// listing is not in cache, gather extra info and log
@@ -60,24 +64,28 @@ func (m *Monitor) Refresh(link string, init bool) {
 
 		if err != nil {
 			m.logger.Err(err).Msg("error getting date innerhtml")
+			return
 		}
 
 		location, err := s.Find(".location").First().Html()
 
 		if err != nil {
 			m.logger.Err(err).Msg("error getting location innerhtml")
+			return
 		}
 
 		thumbnail, exists := s.Find("img").First().Attr("src")
 
 		if !exists {
 			m.logger.Error().Msg("image doesn't have source")
+			return
 		}
 
 		url, exists := s.Find("a").First().Attr("href")
 
 		if !exists {
 			m.logger.Err(err).Msg("error getting url")
+			return
 		}
 
 		e := Event{
@@ -88,14 +96,13 @@ func (m *Monitor) Refresh(link string, init bool) {
 			url,
 		}
 
+		m.cache[title] = e
+
 		if !init {
 			m.logger.Info().Any("event", e).Msg("new event found!")
-		}
-
-		m.cache[title] = e
-		if !init {
 			m.Alert(e)
 		}
+
 	})
 
 	// check for pagination
@@ -105,11 +112,10 @@ func (m *Monitor) Refresh(link string, init bool) {
 	if loadMore.Length() > 0 {
 		nextPageLink, exists := loadMore.First().Attr("href")
 
-		if !exists {
-			m.logger.Error().Msg("nextPagelink doesnt have attr href")
+		// sanity checks voor pagination links
+		if exists && nextPageLink != "" && nextPageLink != link {
+			m.Refresh(nextPageLink, init)
 		}
-
-		m.Refresh(nextPageLink, init)
 	}
 }
 
