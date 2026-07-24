@@ -49,16 +49,25 @@ func (m *Monitor) Refresh(link string, init bool) {
 
 	// iterate over cards
 	doc.Find(".col-xs-12.col-sm-6.col-md-3.card.events-card").Each(func(i int, s *goquery.Selection) {
-		title, err := s.Find(".info").Children().First().Children().First().Html()
+		url, exists := s.Find("a").First().Attr("href")
 
-		if err != nil {
-			m.logger.Err(err).Msg("error getting title innerhtml")
-		} else if _, exists := m.cache[title]; exists {
+		if !exists {
+			m.logger.Err(err).Msg("error getting url")
+			return
+		}
+
+		if _, exists := m.cache[url]; exists {
 			// already in cache, skip
 			return
 		}
 
 		// listing is not in cache, gather extra info and log
+
+		title, err := s.Find(".info").Children().First().Children().First().Html()
+
+		if err != nil {
+			m.logger.Err(err).Msg("error getting title innerhtml")
+		}
 
 		date, err := s.Find(".date").First().Html()
 
@@ -81,13 +90,6 @@ func (m *Monitor) Refresh(link string, init bool) {
 			return
 		}
 
-		url, exists := s.Find("a").First().Attr("href")
-
-		if !exists {
-			m.logger.Err(err).Msg("error getting url")
-			return
-		}
-
 		e := Event{
 			title,
 			date,
@@ -96,7 +98,7 @@ func (m *Monitor) Refresh(link string, init bool) {
 			url,
 		}
 
-		m.cache[title] = e
+		m.cache[url] = e
 
 		if !init {
 			m.logger.Info().Any("event", e).Msg("new event found!")
