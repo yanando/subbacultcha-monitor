@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -28,15 +29,19 @@ type Monitor struct {
 	logger zerolog.Logger
 }
 
-func (m *Monitor) Refresh(link string, init bool) {
-	resp, err := http.Get(link)
+func (m *Monitor) Refresh(link string, init bool) error {
+	req, _ := http.NewRequest("GET", link, nil)
+
+	req.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+
+	resp, err := http.DefaultClient.Do(req)
 
 	if err != nil {
 		m.logger.Err(err).Msg("getting events page")
-		return
+		return err
 	} else if resp.StatusCode > 200 {
-		m.logger.Error().Int("status code", resp.StatusCode)
-		return
+		m.logger.Error().Int("status code", resp.StatusCode).Msg("Invalid statuscode")
+		return errors.New("refresh: invalid statuscode")
 	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
@@ -44,30 +49,21 @@ func (m *Monitor) Refresh(link string, init bool) {
 
 	if err != nil {
 		m.logger.Err(err).Msg("parsing events page")
-		return
+		return err
 	}
 
 	// iterate over cards
 	doc.Find(".col-xs-12.col-sm-6.col-md-3.card.events-card").Each(func(i int, s *goquery.Selection) {
-		url, exists := s.Find("a").First().Attr("href")
+		title, err := s.Find(".info").Children().First().Children().First().Html()
 
-		if !exists {
-			m.logger.Err(err).Msg("error getting url")
-			return
-		}
-
-		if _, exists := m.cache[url]; exists {
+		if err != nil {
+			m.logger.Err(err).Msg("error getting title innerhtml")
+		} else if _, exists := m.cache[title]; exists {
 			// already in cache, skip
 			return
 		}
 
 		// listing is not in cache, gather extra info and log
-
-		title, err := s.Find(".info").Children().First().Children().First().Html()
-
-		if err != nil {
-			m.logger.Err(err).Msg("error getting title innerhtml")
-		}
 
 		date, err := s.Find(".date").First().Html()
 
@@ -90,6 +86,13 @@ func (m *Monitor) Refresh(link string, init bool) {
 			return
 		}
 
+		url, exists := s.Find("a").First().Attr("href")
+
+		if !exists {
+			m.logger.Err(err).Msg("error getting url")
+			return
+		}
+
 		e := Event{
 			title,
 			date,
@@ -98,7 +101,7 @@ func (m *Monitor) Refresh(link string, init bool) {
 			url,
 		}
 
-		m.cache[url] = e
+		m.cache[title] = e
 
 		if !init {
 			m.logger.Info().Any("event", e).Msg("new event found!")
@@ -119,6 +122,7 @@ func (m *Monitor) Refresh(link string, init bool) {
 			m.Refresh(nextPageLink, init)
 		}
 	}
+	return nil
 }
 
 func (m *Monitor) Alert(e Event) {
@@ -164,17 +168,22 @@ func main() {
 	mon := NewMonitor()
 
 	// init
-	mon.Refresh(mainLink, true)
+	err := mon.Refresh(mainLink, true)
+
+	if err != nil {
+		log.Fatalf("error initializing monitor: %v\n", err)
+	}
 
 	mon.logger.Info().Int("Current event count", len(mon.cache)).Msg("Initialization complete")
 
 	for {
-		// refresh every 5 mins
-		time.Sleep(time.Minute * 5)
+		// refresh every 15 mins
+		time.Sleep(time.Minute * 15)
 		mon.Refresh(mainLink, false)
 	}
 }
 
+//go:fix inline
 func ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }
